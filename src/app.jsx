@@ -1,11 +1,12 @@
 import { useState, useRef, useEffect } from 'react';
-import { Chart as c, CategoryScale, LinearScale, PointElement, LineElement, Filler } from 'chart.js';
+import { Chart as c, CategoryScale, LinearScale, PointElement, LineElement, Filler, LineController } from 'chart.js';
 import { Line } from 'react-chartjs-2';
 import * as ss from 'simple-statistics';
+import annotationPlugin from 'chartjs-plugin-annotation';
 
-c.register({
-    CategoryScale, LinearScale, PointElement, LineElement, Filler
-});
+c.register(
+    CategoryScale, LinearScale, PointElement, LineElement, Filler, LineController, annotationPlugin
+);
 
 export default function App() {
 
@@ -26,12 +27,11 @@ export default function App() {
     const [data, setData] = useState([]);
     const [inputClicked, setInputClicked] = useState(false);
 
-    // parsing inputs: 
-
     // Add separate state variables for each curve at the top of your component
     const [synthData, setSynthData] = useState([]);
     const [piecewiseData, setPiecewiseData] = useState([]);
     const [gaussianData, setGaussianData] = useState([]);
+    const userGrade = input.user_grade !== "" ? Number(input.user_grade) : null;
 
     useEffect(() => {
         const min = Number(input.min_point_on_exam) || 0;
@@ -63,32 +63,7 @@ export default function App() {
 
     }, [input]);
 
-    /* basic calculations */
-
-
-    /**Technique de distribution: 
-     * 
-     * Reconstruction de distribution synthetique
-     * La courbe de cloche (fitted Gaussian/Bell Curve)
-     * histogramme empirical hybride avec synthetique. 
-     * Percentile mapping model 
-     * piecewise distribution curve.
-    */
-
-    // Attempt to generate data : confidence percent and intervals are questionable. Is raw data reliable. Questionable.
-    const [generateDataArray, setGenerateDataArray] = useState([]);
-    const generateData = (e) => {
-        setGenerateDataArray(prev => [...prev,
-        input.high,
-        input.low,
-        input.median,
-        input.upper_q,
-            input
-        ])
-    }
-
     // Create functions 
-
     function gaussian(x, mean, std) {
         return (1 / (std * Math.sqrt(2 * Math.PI))) * Math.exp(-0.5 * ((x - mean) / std) ** 2);
     }
@@ -116,43 +91,10 @@ export default function App() {
         }
         return sum;
     }
-    function percentile(x, low, q1, median, q3, high) {
-        const pts = [
-            [low, 0],
-            [q1, 0.25],
-            [median, 0.5],
-            [q3, 0.75],
-            [high, 1]
-        ];
 
-        for (let i = 0; i < pts.length - 1; i++) {
-            const [x1, y1] = pts[i];
-            const [x2, y2] = pts[i + 1];
-
-            if (x >= x1 && x <= x2) {
-                return (y2 - y1) / (x2 - x1);
-            }
-        }
-        return 0;
-    }
-
-    // define functions
-    const mean = (data) => { return data.reduce((a, b) => a + b, 0) / data.length };
-
-    // we need to make sure data.length = num_stud
-    const median = (data) => {
-        const sorted = [...data].sort((a, b) => a - b);
-        const s = sorted.length;
-        if (s === 0) return 0;
-        if (s % 2 === 1) return sorted[Math.floor(s / 2)]
-        else return (sorted[Math.floor(s / 2) - 1] + sorted[Math.floor(s / 2)]) / 2;
-    };
-
-
-    // Chart
-
-    const min = Number(input.min_point_on_exam);
-    const max = Number(input.max_point_on_exam);
+    // Chart scale fallbacks to avoid single-point axis configuration crashes
+    const min = input.min_point_on_exam !== "" ? Number(input.min_point_on_exam) : 0;
+    const max = input.max_point_on_exam !== "" ? Number(input.max_point_on_exam) : 100;
     const labels_arr = [];
     for (let i = min; i <= max; i++) {
         labels_arr.push(i);
@@ -189,15 +131,11 @@ export default function App() {
     };
 
     const handleSubmit = (e) => {
-
         e.preventDefault();
-        console.log(labels_arr);
-        console.log(input.sure);
         setInputClicked(false);
     };
 
     const handleReset = (e) => {
-
         e.preventDefault();
         setInput({
             max_point_on_exam: "",
@@ -342,6 +280,7 @@ export default function App() {
                             maintainAspectRatio: false,
                             scales: {
                                 x: {
+                                    type: 'category',
                                     title: {
                                         display: true,
                                         text: 'Score',
@@ -349,11 +288,34 @@ export default function App() {
                                     }
                                 },
                                 y: {
+                                    type: 'linear',
                                     title: {
                                         display: true,
                                         text: 'Number of students',
                                         font: { family: 'monospace' }
                                     }
+                                }
+                            },
+                            // FIXED: plugins is adjacent to scales, NOT nested inside it!
+                            plugins: {
+                                annotation: {
+                                    annotations: userGrade !== null ? {
+                                        myGradeLine: {
+                                            type: 'line',
+                                            xMin: labels_arr.indexOf(userGrade),
+                                            xMax: labels_arr.indexOf(userGrade),
+                                            borderColor: 'rgb(0, 0, 0)',
+                                            borderWidth: 3,
+                                            borderDash: [6, 6],
+                                            label: {
+                                                display: true,
+                                                content: `My Grade: ${userGrade}`,
+                                                position: 'start',
+                                                font: { family: 'monospace', weight: 'bold' },
+                                                backgroundColor: 'rgba(0,0,0,0.8)'
+                                            }
+                                        }
+                                    } : {}
                                 }
                             }
                         }}
